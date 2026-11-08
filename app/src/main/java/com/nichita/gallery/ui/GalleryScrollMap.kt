@@ -10,15 +10,16 @@ internal class GalleryScrollMap(
     val headerHeight: Float,
     val headingHeight: Float,
     val gap: Float,
-    bottomPadding: Float
+    bottomPadding: Float,
+    private val albumTitleHeight: Float = 0f
 ) {
     val headerIndexes = IntArray(counts.size)
     private val starts = FloatArray(counts.size)
     private val rowCounts = IntArray(counts.size)
     val totalHeight: Float
     init {
-        var index = 1
-        var y = headingHeight + gap
+        var index = if (albumTitleHeight > 0) 2 else 1
+        var y = headingHeight + gap + if (albumTitleHeight > 0) albumTitleHeight + gap else 0f
         counts.forEachIndexed { section, count ->
             headerIndexes[section] = index
             starts[section] = y
@@ -43,6 +44,7 @@ internal class GalleryScrollMap(
 
     fun offsetFor(index: Int): Float {
         if (index <= 0 || headerIndexes.isEmpty()) return 0f
+        if (albumTitleHeight > 0 && index == 1) return headingHeight + gap
         val result = headerIndexes.binarySearch(index)
         val section = if (result >= 0) result else (-result - 2).coerceAtLeast(0)
         val relative = index - headerIndexes[section]
@@ -50,7 +52,10 @@ internal class GalleryScrollMap(
     }
 
     fun target(offset: Float): Pair<Int, Int> {
-        if (starts.isEmpty() || offset < starts[0]) return 0 to offset.coerceAtLeast(0f).toInt()
+        if (starts.isEmpty() || offset < starts[0]) {
+            return if (albumTitleHeight > 0 && offset >= headingHeight + gap) 1 to (offset - headingHeight - gap).toInt()
+            else 0 to offset.coerceAtLeast(0f).toInt()
+        }
         val section = monthAt(offset)
         val local = (offset - starts[section]).coerceAtLeast(0f)
         if (local < headerHeight + gap) return headerIndexes[section] to local.toInt()

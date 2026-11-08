@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.SavedStateHandle
 import com.nichita.gallery.data.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.FlowPreview
@@ -24,9 +25,11 @@ data class GalleryUiState(
     val columns: Int = 3
 )
 
-class GalleryViewModel(application: Application) : AndroidViewModel(application) {
+class GalleryViewModel(application: Application, private val savedState: SavedStateHandle) : AndroidViewModel(application) {
     private val repository = MediaRepository(application)
-    private val mutableState = MutableStateFlow(GalleryUiState())
+    private val mutableState = MutableStateFlow(GalleryUiState(tab =
+        GalleryTab.entries.find { it.name == savedState.get<String>("tab") } ?: GalleryTab.Photos))
+    private val deletedIds = MutableStateFlow<Set<String>>(emptySet())
     val state = mutableState.asStateFlow()
     private var observing: Job? = null
     private var loading: Job? = null
@@ -60,7 +63,10 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
 
     @OptIn(FlowPreview::class)
     fun start() {
-        if (observing != null) return
+        if (observing != null) {
+            if (MediaPermissions.read(getApplication()) != state.value.access) refresh(force = true)
+            return
+        }
         refresh()
         observing = viewModelScope.launch {
             repository.changes()
@@ -98,7 +104,11 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         if (!access.canRead) return
         loading = viewModelScope.launch {
             try {
-                val library = repository.load(access, force)
+                val loaded = repository.load(access, force)
+                val library = withContext(Dispatchers.Default) {
+                    val removed = deletedIds.value
+                    if (removed.isEmpty()) loaded else buildLibrary(loaded.items.filterNot { it.id in removed })
+                }
                 mutableState.update { it.copy(library = library, loading = false) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -118,6 +128,17 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun selectTab(tab: GalleryTab) {
+        savedState["tab"] = tab.name
         mutableState.update { it.copy(tab = tab) }
+    }
+
+    fun mediaDeleted(id: String) {
+        deletedIds.update { it + id }
+        val before = state.value.library
+        viewModelScope.launch {
+            val filtered = withContext(Dispatchers.Default) { buildLibrary(before.items.filterNot { it.id in deletedIds.value }) }
+            if (state.value.library === before) mutableState.update { it.copy(library = filtered) }
+            refresh(force = true)
+        }
     }
 }

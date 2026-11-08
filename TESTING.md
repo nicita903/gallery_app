@@ -1,5 +1,26 @@
 # Gallery: local media
 
+## Gallery 1.3
+
+See GALLERY_1_3.md for the bug fixes, full changed-file list, animation timings,
+deletion safeguards, validation coverage, and remaining limitations.
+
+On the Galaxy S25, open a photo, double-tap/pinch, pan, then single-tap to hide
+and restore controls. Verify the zoom is retained. Zoom out before swiping.
+Open Information while zoomed and dismiss it; check that the photo stays put.
+Rotate to landscape and back. Close and confirm the grid position is retained.
+
+Test deletion only with a disposable photo: cancel the app dialog first, then
+cancel the Android dialog when shown, then approve a fresh request. Owned media
+can be approved automatically by Android after the app confirmation. Verify the
+next photo, album count, and cover. Deleting an album's final item should return
+to the album list safely. Do not use irreplaceable media for deletion testing.
+
+Drag both scrollbars, try differently sized album names, and check the wide Back
+to top pill. Repeat in both themes and with reduced system animation settings.
+Use an API 29 device/emulator separately to exercise the older recoverable-delete
+permission path; Android 16 cannot validate that branch.
+
 ## Gallery 1.2 quick checks
 
 Gallery 1.2 is installed on the connected Galaxy S25. Open Gallery and keep your

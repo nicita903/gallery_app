@@ -3,16 +3,51 @@ package com.nichita.gallery.ui
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,7 +70,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.ImageLoader
 import com.nichita.gallery.GalleryApplication
 import com.nichita.gallery.R
-import com.nichita.gallery.data.*
+import com.nichita.gallery.data.MediaPermissions
+import com.nichita.gallery.data.MediaItem
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import kotlin.math.ceil
 
 @Composable
@@ -45,6 +83,10 @@ fun GalleryScreen(model: GalleryViewModel = viewModel()) {
     val app = context.applicationContext as GalleryApplication
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { model.refresh(force = true) }
+    val deletion = rememberMediaDeleteAction(model::mediaDeleted) {
+        model.refresh(force = true)
+        Toast.makeText(app, R.string.delete_failed, Toast.LENGTH_LONG).show()
+    }
     DisposableEffect(lifecycle, model) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -60,28 +102,30 @@ fun GalleryScreen(model: GalleryViewModel = viewModel()) {
     GalleryContent(state, app.thumbnails, { app.viewerImages }, model::selectTab, { model.refresh(force = true) }, model::setColumns,
         requestAccess = { launcher.launch(MediaPermissions.requested()) },
         openSettings = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-            Uri.fromParts("package", context.packageName, null))) })
+            Uri.fromParts("package", context.packageName, null))) }, onDelete = deletion.request, deletionBusy = deletion.busy)
 }
 
 @Composable
 internal fun GalleryContent(
     state: GalleryUiState, thumbnails: ImageLoader, viewer: () -> ImageLoader,
     selectTab: (GalleryTab) -> Unit, refresh: () -> Unit, setColumns: (Int) -> Unit,
-    requestAccess: () -> Unit, openSettings: () -> Unit
+    requestAccess: () -> Unit, openSettings: () -> Unit,
+    onDelete: (MediaItem) -> Unit = {}, deletionBusy: Boolean = false
 ) {
     var albumId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedPosition by rememberSaveable { mutableIntStateOf(0) }
     var pinching by remember { mutableStateOf(false) }
     val preview = remember { mutableFloatStateOf(1f) }
     val album = remember(state.library, albumId) { state.library.albums.find { it.id == albumId } }
-    val visibleItems = if (state.tab == GalleryTab.Albums && album != null) album.items else state.library.items
+    val visibleItems = if (state.tab == GalleryTab.Albums && albumId != null) album?.items.orEmpty() else state.library.items
     val photoScroll = rememberLazyGridState()
     val albumsScroll = rememberLazyGridState()
     val albumScroll = rememberLazyGridState()
     BackHandler(enabled = albumId != null && selectedId == null) { albumId = null }
     LaunchedEffect(state.library, state.loading) {
-        if (!state.loading && albumId != null && album == null) albumId = null
-        if (!state.loading && selectedId != null && visibleItems.none { it.id == selectedId }) selectedId = null
+        if (!state.loading && selectedId != null && visibleItems.isEmpty()) selectedId = null
+        if (!state.loading && albumId != null && album == null) { selectedId = null; albumId = null }
     }
     Scaffold(containerColor = MaterialTheme.colorScheme.background, bottomBar = {
         NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
@@ -100,19 +144,30 @@ internal fun GalleryContent(
             val columns = if (mediaGrid) state.columns else 3
             val scroll = if (tab == GalleryTab.Photos) photoScroll else if (openAlbum != null) albumScroll else albumsScroll
             val sections = openAlbum?.sections ?: state.library.sections
+            val navigation = remember { Animatable(1f) }
+            var navigationStarted by remember { mutableStateOf(false) }
+            LaunchedEffect(tab, albumId) {
+                if (navigationStarted) {
+                    navigation.snapTo(0.88f)
+                    navigation.animateTo(1f, tween(GalleryMotion.Change, easing = GalleryMotion.Easing))
+                }
+                navigationStarted = true
+            }
             val density = LocalDensity.current
             val gap = 3.dp
             val headerHeight = with(density) { (MaterialTheme.typography.titleMedium.lineHeight.toDp() + 24.dp).coerceAtLeast(52.dp) }
             val cellPixels = with(density) { ceil(((maxWidth - 24.dp - gap * (columns - 1)).toPx() / columns).toDouble()).toInt().coerceAtLeast(1) }
-            var headingPixels by remember { mutableIntStateOf(0) }
-            val map = remember(sections, columns, cellPixels, headerHeight, headingPixels, density) {
+            var headingPixels by rememberSaveable { mutableIntStateOf(0) }
+            var albumTitlePixels by remember(openAlbum?.id) { mutableIntStateOf(0) }
+            val map = remember(sections, columns, cellPixels, headerHeight, headingPixels, albumTitlePixels, density) {
                 with(density) { GalleryScrollMap(sections.map { it.items.size }, columns, cellPixels.toFloat(),
-                    headerHeight.toPx(), headingPixels.toFloat(), gap.toPx(), 24.dp.toPx()) }
+                    headerHeight.toPx(), headingPixels.toFloat(), gap.toPx(), 24.dp.toPx(),
+                    if (openAlbum != null) albumTitlePixels.coerceAtLeast(1).toFloat() else 0f) }
             }
             val columnDescription = stringResource(R.string.grid_columns, columns)
             LazyVerticalGrid(columns = GridCells.Fixed(columns), state = scroll,
                 modifier = Modifier.fillMaxSize().testTag("media_grid").semantics { contentDescription = columnDescription }
-                    .graphicsLayer { scaleX = preview.floatValue; scaleY = preview.floatValue }
+                    .graphicsLayer { scaleX = preview.floatValue; scaleY = preview.floatValue; alpha = navigation.value }
                     .gridPinch(columns, mediaGrid, { preview.floatValue = it }, { pinching = it }) { value ->
                         if (value != columns) {
                             val anchor = scroll.layoutInfo.visibleItemsInfo.firstOrNull { it.contentType == "media" }
@@ -158,7 +213,7 @@ internal fun GalleryContent(
                     }
                     mediaGrid -> {
                         if (openAlbum != null) item(key = "album_title", span = { GridItemSpan(maxLineSpan) }) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.onSizeChanged { albumTitlePixels = it.height }, verticalAlignment = Alignment.CenterVertically) {
                                 IconButton(onClick = { albumId = null }) { Icon(painterResource(R.drawable.ic_back), stringResource(R.string.all_albums)) }
                                 Text(openAlbum.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                             }
@@ -171,7 +226,10 @@ internal fun GalleryContent(
                             }
                             items(section.items, key = { it.id }, contentType = { "media" }) { media ->
                                 MediaThumbnail(media, thumbnails, cellPixels, columns,
-                                    Modifier.clip(RoundedCornerShape(6.dp)).clickable(enabled = !pinching) { selectedId = media.id })
+                                    Modifier.clip(RoundedCornerShape(6.dp)).clickable(enabled = !pinching) {
+                                        selectedPosition = visibleItems.indexOfFirst { it.id == media.id }.coerceAtLeast(0)
+                                        selectedId = media.id
+                                    })
                             }
                         }
                     }
@@ -187,13 +245,21 @@ internal fun GalleryContent(
                     }
                 }
             }
-            if (tab == GalleryTab.Photos && state.access.canRead && !state.error && sections.isNotEmpty()) {
-                GalleryScrollControls(photoScroll, map, sections.map { it.month }, Modifier.fillMaxSize())
+            if (mediaGrid && state.access.canRead && !state.error && sections.isNotEmpty()) {
+                GalleryScrollControls(scroll, map, sections.map { it.month }, Modifier.fillMaxSize())
+            } else if (tab == GalleryTab.Albums && openAlbum == null && state.library.albums.isNotEmpty()) {
+                AlbumScrollControls(albumsScroll, state.library.albums.size, Modifier.fillMaxSize(), columns, headingPixels, state.library.albums)
             }
         }
     }
-    val selectedIndex = remember(visibleItems, selectedId) { if (selectedId == null) -1 else visibleItems.indexOfFirst { it.id == selectedId } }
-    if (selectedIndex >= 0) MediaViewer(visibleItems, selectedId!!, viewer(), onCurrentItem = { selectedId = it }, onClose = { selectedId = null })
+    val selectedIndex = remember(visibleItems, selectedId, selectedPosition) {
+        if (selectedId == null || visibleItems.isEmpty()) -1
+        else visibleItems.indexOfFirst { it.id == selectedId }.takeIf { it >= 0 } ?: selectedPosition.coerceIn(0, visibleItems.lastIndex)
+    }
+    if (selectedIndex >= 0) MediaViewer(visibleItems, visibleItems[selectedIndex].id, viewer(), onCurrentItem = {
+        selectedId = it
+        selectedPosition = visibleItems.indexOfFirst { item -> item.id == it }.coerceAtLeast(0)
+    }, onClose = { selectedId = null }, onDelete = onDelete, thumbnails = thumbnails, deletionBusy = deletionBusy)
 }
 
 @Composable

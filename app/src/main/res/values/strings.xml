@@ -23,4 +23,27 @@
     <string name="grid_columns">Photos per row: %1$d</string>
     <string name="media_unavailable">This image is no longer accessible or its format is unsupported.</string>
     <string name="video_unavailable">This video is no longer accessible or cannot be played on this device.</string>
+    <string name="back_to_top">Back to top</string>
+    <string name="scroll_albums">Scroll albums</string>
+    <string name="share">Share</string>
+    <string name="information">Information</string>
+    <string name="delete">Delete</string>
+    <string name="delete_title">Delete this item?</string>
+    <string name="delete_message">Remove this item from your device? Android may ask you to confirm.</string>
+    <string name="cancel">Cancel</string>
+    <string name="delete_failed">Unable to delete this item. Check access and try again.</string>
+    <string name="share_failed">Unable to share this item.</string>
+    <string name="filename">Filename</string>
+    <string name="resolution">Resolution</string>
+    <string name="date_time">Date and time</string>
+    <string name="file_size">File size</string>
+    <string name="format">Format</string>
+    <string name="folder">Storage folder</string>
+    <string name="camera_model">Camera model</string>
+    <string name="manufacturer">Camera manufacturer</string>
+    <string name="iso">ISO</string>
+    <string name="aperture">Aperture</string>
+    <string name="shutter_speed">Shutter speed</string>
+    <string name="focal_length">Focal length</string>
+    <string name="zoom_level">Zoom: %1$d%%</string>
 </resources>
