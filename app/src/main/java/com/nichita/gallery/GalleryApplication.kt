@@ -7,6 +7,11 @@ import coil3.video.VideoFrameDecoder
 import com.nichita.gallery.data.ThumbnailFetcher
 
 class GalleryApplication : Application() {
+    private val viewerDelegate = lazy { createViewer() }
+    fun clearImageMemory() {
+        thumbnails.memoryCache?.clear()
+        if (viewerDelegate.isInitialized()) viewerDelegate.value.memoryCache?.clear()
+    }
     val thumbnails: ImageLoader by lazy {
         ImageLoader.Builder(this)
             .components { add(ThumbnailFetcher.Factory(contentResolver)) }
@@ -14,11 +19,11 @@ class GalleryApplication : Application() {
             .diskCache(null)
             .build()
     }
-    val viewerImages: ImageLoader by lazy {
+    val viewerImages: ImageLoader by viewerDelegate
+    private fun createViewer(): ImageLoader =
         ImageLoader.Builder(this)
             .components { add(VideoFrameDecoder.Factory()) }
             .memoryCache { MemoryCache.Builder().maxSizeBytes(32L * 1024 * 1024).build() }
             .diskCache(null)
             .build()
-    }
 }

@@ -8,6 +8,9 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -19,6 +22,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -61,6 +65,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -102,7 +107,9 @@ fun GalleryScreen(model: GalleryViewModel = viewModel()) {
     GalleryContent(state, app.thumbnails, { app.viewerImages }, model::selectTab, { model.refresh(force = true) }, model::setColumns,
         requestAccess = { launcher.launch(MediaPermissions.requested()) },
         openSettings = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-            Uri.fromParts("package", context.packageName, null))) }, onDelete = deletion.request, deletionBusy = deletion.busy)
+            Uri.fromParts("package", context.packageName, null))) }, onDelete = deletion.request, deletionBusy = deletion.busy,
+        search = model::search, setTheme = model::setTheme, setOldest = model::setOldest,
+        setAlbumNames = model::setAlbumNames, toggleFavorite = model::toggleFavorite, toggleFavorites = model::toggleFavorites)
 }
 
 @Composable
@@ -110,40 +117,59 @@ internal fun GalleryContent(
     state: GalleryUiState, thumbnails: ImageLoader, viewer: () -> ImageLoader,
     selectTab: (GalleryTab) -> Unit, refresh: () -> Unit, setColumns: (Int) -> Unit,
     requestAccess: () -> Unit, openSettings: () -> Unit,
-    onDelete: (MediaItem) -> Unit = {}, deletionBusy: Boolean = false
+    onDelete: (MediaItem) -> Unit = {}, deletionBusy: Boolean = false,
+    search: (String) -> Unit = {}, setTheme: (ThemeMode) -> Unit = {},
+    setOldest: (Boolean) -> Unit = {}, setAlbumNames: (Boolean) -> Unit = {},
+    toggleFavorite: (MediaItem) -> Unit = {}, toggleFavorites: () -> Unit = {}
 ) {
     var albumId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedPosition by rememberSaveable { mutableIntStateOf(0) }
     var pinching by remember { mutableStateOf(false) }
     val preview = remember { mutableFloatStateOf(1f) }
-    val album = remember(state.library, albumId) { state.library.albums.find { it.id == albumId } }
-    val visibleItems = if (state.tab == GalleryTab.Albums && albumId != null) album?.items.orEmpty() else state.library.items
+    val library = (if (state.tab == GalleryTab.Photos) state.displayLibrary else state.allLibrary) ?: state.library
+    val albumLibrary = state.allLibrary ?: state.library
+    val album = remember(albumLibrary, albumId) { albumLibrary.albums.find { it.id == albumId } }
+    val pageLibrary = if (state.tab == GalleryTab.Search) state.searchLibrary else library
+    val visibleItems = if (state.tab == GalleryTab.Albums && albumId != null) album?.items.orEmpty() else pageLibrary.items
     val photoScroll = rememberLazyGridState()
     val albumsScroll = rememberLazyGridState()
     val albumScroll = rememberLazyGridState()
-    BackHandler(enabled = albumId != null && selectedId == null) { albumId = null }
-    LaunchedEffect(state.library, state.loading) {
-        if (!state.loading && selectedId != null && visibleItems.isEmpty()) selectedId = null
+    val searchScroll = rememberLazyGridState()
+    val settingsScroll = androidx.compose.foundation.lazy.rememberLazyListState()
+    var photosHeading by rememberSaveable { mutableIntStateOf(0) }
+    var albumsHeading by rememberSaveable { mutableIntStateOf(0) }
+    var searchHeading by rememberSaveable { mutableIntStateOf(0) }
+    BackHandler(enabled = state.tab == GalleryTab.Albums && albumId != null && selectedId == null) { albumId = null }
+    LaunchedEffect(pageLibrary, album, state.loading, state.searching) {
+        if (!state.loading && !state.searching && selectedId != null && visibleItems.isEmpty()) selectedId = null
         if (!state.loading && albumId != null && album == null) { selectedId = null; albumId = null }
     }
     Scaffold(containerColor = MaterialTheme.colorScheme.background, bottomBar = {
-        NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
-            GalleryTab.entries.forEach { tab ->
-                NavigationBarItem(selected = state.tab == tab, onClick = { albumId = null; selectTab(tab) },
-                    icon = { Icon(painterResource(if (tab == GalleryTab.Photos) R.drawable.ic_photos else R.drawable.ic_albums), null, Modifier.size(24.dp)) },
-                    label = { Text(stringResource(if (tab == GalleryTab.Photos) R.string.photos else R.string.albums)) },
-                    colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.primaryContainer))
-            }
-        }
+        TerminalNavigation(state.tab, selectTab)
     }) { insets ->
         BoxWithConstraints(Modifier.padding(insets).fillMaxSize()) {
             val tab = state.tab
+            val header: @Composable () -> Unit = {
+                TerminalHeader(stringResource(if (state.favoritesOnly && tab == GalleryTab.Photos) R.string.favorites else tab.label),
+                    search = { selectTab(GalleryTab.Search) }, settings = { selectTab(GalleryTab.Settings) },
+                    refresh = refresh, favoritesOnly = state.favoritesOnly,
+                    toggleFavorites = { toggleFavorites(); selectTab(GalleryTab.Photos) })
+            }
+            if (tab == GalleryTab.Settings) {
+                GallerySettings(state, setTheme, setOldest, setAlbumNames, setColumns, requestAccess, openSettings, settingsScroll, header)
+                return@BoxWithConstraints
+            }
             val openAlbum = if (tab == GalleryTab.Albums) album else null
-            val mediaGrid = tab == GalleryTab.Photos || openAlbum != null
-            val columns = if (mediaGrid) state.columns else 3
-            val scroll = if (tab == GalleryTab.Photos) photoScroll else if (openAlbum != null) albumScroll else albumsScroll
-            val sections = openAlbum?.sections ?: state.library.sections
+            val mediaGrid = tab != GalleryTab.Albums || openAlbum != null
+            val columns = if (mediaGrid) (state.columns * (maxWidth.value / 400f).toInt().coerceAtLeast(1)).coerceAtMost(12) else 1
+            val scroll = when {
+                tab == GalleryTab.Search -> searchScroll
+                tab == GalleryTab.Photos -> photoScroll
+                openAlbum != null -> albumScroll
+                else -> albumsScroll
+            }
+            val sections = openAlbum?.sections ?: pageLibrary.sections
             val navigation = remember { Animatable(1f) }
             var navigationStarted by remember { mutableStateOf(false) }
             LaunchedEffect(tab, albumId) {
@@ -157,7 +183,11 @@ internal fun GalleryContent(
             val gap = 3.dp
             val headerHeight = with(density) { (MaterialTheme.typography.titleMedium.lineHeight.toDp() + 24.dp).coerceAtLeast(52.dp) }
             val cellPixels = with(density) { ceil(((maxWidth - 24.dp - gap * (columns - 1)).toPx() / columns).toDouble()).toInt().coerceAtLeast(1) }
-            var headingPixels by rememberSaveable { mutableIntStateOf(0) }
+            val headingPixels = when (tab) {
+                GalleryTab.Photos -> photosHeading
+                GalleryTab.Albums -> albumsHeading
+                else -> searchHeading
+            }
             var albumTitlePixels by remember(openAlbum?.id) { mutableIntStateOf(0) }
             val map = remember(sections, columns, cellPixels, headerHeight, headingPixels, albumTitlePixels, density) {
                 with(density) { GalleryScrollMap(sections.map { it.items.size }, columns, cellPixels.toFloat(),
@@ -180,16 +210,23 @@ internal fun GalleryContent(
                 contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 24.dp),
                 horizontalArrangement = Arrangement.spacedBy(gap), verticalArrangement = Arrangement.spacedBy(gap)) {
                 item(key = "heading", span = { GridItemSpan(maxLineSpan) }, contentType = "heading") {
-                    Column(Modifier.onSizeChanged { headingPixels = it.height }.padding(start = 12.dp, top = 64.dp, end = 12.dp, bottom = 20.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(stringResource(if (tab == GalleryTab.Photos) R.string.photos else R.string.albums),
-                                style = MaterialTheme.typography.displaySmall, modifier = Modifier.weight(1f))
-                            IconButton(onClick = openSettings) { Icon(painterResource(R.drawable.ic_settings), stringResource(R.string.app_settings)) }
+                    Column(Modifier.onSizeChanged {
+                        when (tab) {
+                            GalleryTab.Photos -> photosHeading = it.height
+                            GalleryTab.Albums -> albumsHeading = it.height
+                            else -> searchHeading = it.height
                         }
-                        Spacer(Modifier.height(8.dp))
-                        Text(stringResource(if (state.access.isFull) R.string.local_library else R.string.limited_library),
-                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        if (state.access.canRead && !state.access.isFull) TextButton(onClick = requestAccess) { Text(stringResource(R.string.manage_access)) }
+                    }.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                        header()
+                        if (tab == GalleryTab.Search) OutlinedTextField(value = state.query, onValueChange = search,
+                            modifier = Modifier.fillMaxWidth().testTag("search_input"),
+                            placeholder = { Text(stringResource(R.string.search_hint)) }, singleLine = true,
+                            leadingIcon = { Icon(painterResource(R.drawable.ic_search), null) })
+                        if (state.access.canRead && !state.access.isFull) {
+                            Text(stringResource(R.string.limited_library), style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            TextButton(onClick = requestAccess) { Text(stringResource(R.string.manage_access)) }
+                        }
                     }
                 }
                 when {
@@ -208,6 +245,16 @@ internal fun GalleryContent(
                     state.loading && state.library.items.isEmpty() -> item(span = { GridItemSpan(maxLineSpan) }) {
                         Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                     }
+                    tab == GalleryTab.Search && state.searching && pageLibrary.items.isEmpty() -> item(span = { GridItemSpan(maxLineSpan) }) {
+                        Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                    }
+                    tab == GalleryTab.Search && pageLibrary.items.isEmpty() -> item(span = { GridItemSpan(maxLineSpan) }) {
+                        Text(stringResource(if (state.query.isBlank()) R.string.search_start else R.string.search_empty),
+                            modifier = Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    tab == GalleryTab.Photos && state.favoritesOnly && library.items.isEmpty() -> item(span = { GridItemSpan(maxLineSpan) }) {
+                        Text(stringResource(R.string.favorite_empty), modifier = Modifier.padding(24.dp))
+                    }
                     state.library.items.isEmpty() -> item(span = { GridItemSpan(maxLineSpan) }) {
                         LibraryMessage(R.string.empty_title, R.string.empty_message) { TextButton(onClick = refresh) { Text(stringResource(R.string.refresh)) } }
                     }
@@ -221,34 +268,49 @@ internal fun GalleryContent(
                         sections.forEach { section ->
                             item(key = "month:${section.month}", span = { GridItemSpan(maxLineSpan) }, contentType = "month") {
                                 Box(Modifier.fillMaxWidth().height(headerHeight).padding(horizontal = 12.dp), contentAlignment = Alignment.CenterStart) {
-                                    Text(section.month, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("> ", color = MaterialTheme.colorScheme.primary, fontFamily = FontFamily.Monospace)
+                                        Text(section.month, style = MaterialTheme.typography.labelLarge, fontFamily = FontFamily.Monospace,
+                                            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                                        Text(" (${section.items.size})", style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
                                 }
                             }
                             items(section.items, key = { it.id }, contentType = { "media" }) { media ->
                                 MediaThumbnail(media, thumbnails, cellPixels, columns,
-                                    Modifier.clip(RoundedCornerShape(6.dp)).clickable(enabled = !pinching) {
+                                    Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = !pinching) {
                                         selectedPosition = visibleItems.indexOfFirst { it.id == media.id }.coerceAtLeast(0)
                                         selectedId = media.id
                                     })
                             }
                         }
                     }
-                    else -> items(state.library.albums, key = { it.id }, contentType = { "album" }) { entry ->
-                        Column(Modifier.padding(bottom = 12.dp)) {
-                            MediaThumbnail(entry.items.first(), thumbnails, cellPixels, 3,
-                                Modifier.clip(RoundedCornerShape(8.dp)).clickable { albumScroll.requestScrollToItem(0); albumId = entry.id })
-                            Text(entry.name, style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(top = 8.dp, start = 4.dp))
-                            Text("${entry.items.size}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(start = 4.dp))
+                    else -> items(library.albums, key = { it.id }, contentType = { "album" }) { entry ->
+                        Column {
+                            Row(Modifier.fillMaxWidth().clickable { albumScroll.requestScrollToItem(0); albumId = entry.id }
+                                .padding(vertical = 10.dp, horizontal = 4.dp).heightIn(min = 64.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                val coverPixels = with(density) { 64.dp.roundToPx() }
+                                MediaThumbnail(entry.items.first(), thumbnails, coverPixels, 3,
+                                    Modifier.size(64.dp).clip(RoundedCornerShape(10.dp)))
+                                Column(Modifier.weight(1f).padding(horizontal = 16.dp)) {
+                                    Text(entry.name, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    Text(androidx.compose.ui.res.pluralStringResource(R.plurals.item_count, entry.items.size, entry.items.size), style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Icon(painterResource(R.drawable.ic_chevron), null, Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         }
                     }
                 }
             }
             if (mediaGrid && state.access.canRead && !state.error && sections.isNotEmpty()) {
                 GalleryScrollControls(scroll, map, sections.map { it.month }, Modifier.fillMaxSize())
-            } else if (tab == GalleryTab.Albums && openAlbum == null && state.library.albums.isNotEmpty()) {
-                AlbumScrollControls(albumsScroll, state.library.albums.size, Modifier.fillMaxSize(), columns, headingPixels, state.library.albums)
+            } else if (tab == GalleryTab.Albums && openAlbum == null && library.albums.isNotEmpty()) {
+                AlbumScrollControls(albumsScroll, library.albums.size, Modifier.fillMaxSize(), columns, headingPixels, library.albums)
             }
         }
     }
@@ -259,7 +321,8 @@ internal fun GalleryContent(
     if (selectedIndex >= 0) MediaViewer(visibleItems, visibleItems[selectedIndex].id, viewer(), onCurrentItem = {
         selectedId = it
         selectedPosition = visibleItems.indexOfFirst { item -> item.id == it }.coerceAtLeast(0)
-    }, onClose = { selectedId = null }, onDelete = onDelete, thumbnails = thumbnails, deletionBusy = deletionBusy)
+    }, onClose = { selectedId = null }, onDelete = onDelete, thumbnails = thumbnails, deletionBusy = deletionBusy,
+        favorites = state.favorites, toggleFavorite = toggleFavorite)
 }
 
 @Composable

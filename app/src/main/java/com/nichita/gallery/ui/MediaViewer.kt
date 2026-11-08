@@ -39,11 +39,18 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.Job
 
 @Composable
 fun MediaViewer(items: List<MediaItem>, initialId: String, loader: ImageLoader,
     onCurrentItem: (String) -> Unit, onClose: () -> Unit, onDelete: (MediaItem) -> Unit = {},
-    thumbnails: ImageLoader = loader, deletionBusy: Boolean = false) {
+    thumbnails: ImageLoader = loader, deletionBusy: Boolean = false,
+    favorites: Set<String> = emptySet(), toggleFavorite: (MediaItem) -> Unit = {}) {
     if (items.isEmpty()) return
     val pager = rememberPagerState(initialPage = items.indexOfFirst { it.id == initialId }.coerceAtLeast(0), pageCount = { items.size })
     var zoomedId by remember { mutableStateOf<String?>(null) }
@@ -52,6 +59,20 @@ fun MediaViewer(items: List<MediaItem>, initialId: String, loader: ImageLoader,
     var deleteId by rememberSaveable { mutableStateOf<String?>(null) }
     var visible by remember { mutableStateOf(false) }
     var closing by remember { mutableStateOf(false) }
+    val dismissOffset = remember { Animatable(0f) }
+    val dismissScope = rememberCoroutineScope()
+
+    var dismissJob by remember { mutableStateOf<Job?>(null) }
+    var dismissDragging by remember { mutableStateOf(false) }
+
+    val density = LocalDensity.current
+    val dismissThreshold = with(density) { 120.dp.toPx() }
+
+    val dismissProgress by remember {
+        derivedStateOf {
+            (dismissOffset.value / dismissThreshold).coerceIn(0f, 1f)
+        }
+    }
     val current = items.getOrNull(pager.currentPage) ?: items.last()
     val currentTransform = rememberSaveable(current.id, saver = PhotoTransform.Saver) { PhotoTransform() }
     val context = LocalContext.current
@@ -98,14 +119,128 @@ fun MediaViewer(items: List<MediaItem>, initialId: String, loader: ImageLoader,
             if (showControls || closing) controller?.show(WindowInsetsCompat.Type.systemBars())
             else controller?.hide(WindowInsetsCompat.Type.systemBars())
         }
-        Box(Modifier.fillMaxSize().drawBehind { drawRect(Color.Black.copy(alpha = progress.value)) }.testTag("media_viewer")) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .drawBehind {
+                    drawRect(
+                        Color.Black.copy(
+                            alpha = progress.value * (1f - dismissProgress * 0.85f)
+                        )
+                    )
+                }
+                .pointerInput(
+                    current.id,
+                    zoomedId,
+                    showInfo,
+                    deletionBusy,
+                    closing
+                ) {
+                    if (
+                        zoomedId == current.id ||
+                        current.type != MediaType.Image ||
+                        showInfo ||
+                        deletionBusy ||
+                        closing
+                    ) {
+                        return@pointerInput
+                    }
+
+                    detectVerticalDragGestures(
+                        onDragStart = {
+                            dismissJob?.cancel()
+                            dismissDragging = true
+                            showControls = false
+                        },
+
+                        onVerticalDrag = { change, dragAmount ->
+
+                            val newOffset = (
+                                    dismissOffset.value + dragAmount
+                                    ).coerceAtLeast(0f)
+
+                            dismissScope.launch {
+                                dismissOffset.snapTo(newOffset)
+                            }
+
+                            change.consume()
+                        },
+
+                        onDragCancel = {
+                            dismissDragging = false
+
+                            dismissJob = dismissScope.launch {
+                                dismissOffset.animateTo(
+                                    targetValue = 0f,
+                                    animationSpec = spring(
+                                        dampingRatio = 0.85f,
+                                        stiffness = 450f
+                                    )
+                                )
+
+                                showControls = true
+                            }
+                        },
+
+                        onDragEnd = {
+                            dismissDragging = false
+
+                            dismissJob = dismissScope.launch {
+
+                                if (dismissOffset.value >= dismissThreshold) {
+
+                                    dismissOffset.animateTo(
+                                        targetValue = size.height.toFloat(),
+                                        animationSpec = tween(
+                                            durationMillis = 180,
+                                            easing = GalleryMotion.Easing
+                                        )
+                                    )
+
+                                    closeCallback()
+
+                                } else {
+
+                                    dismissOffset.animateTo(
+                                        targetValue = 0f,
+                                        animationSpec = spring(
+                                            dampingRatio = 0.85f,
+                                            stiffness = 450f
+                                        )
+                                    )
+
+                                    showControls = true
+                                }
+                            }
+                        }
+                    )
+                }
+                .testTag("media_viewer")
+        ) {
             HorizontalPager(state = pager, key = { items.getOrNull(it)?.id ?: "missing:$it" },
-                userScrollEnabled = zoomedId != current.id && !showInfo && !deletionBusy && !closing,
-                modifier = Modifier.fillMaxSize().testTag("viewer_pager").graphicsLayer {
-                    alpha = progress.value
-                    val scale = 0.95f + 0.05f * progress.value
-                    scaleX = scale; scaleY = scale
-                }) { page ->
+                userScrollEnabled =
+                    zoomedId != current.id &&
+                            !showInfo &&
+                            !deletionBusy &&
+                            !closing &&
+                            !dismissDragging &&
+                            dismissOffset.value == 0f,                modifier = Modifier.fillMaxSize().testTag("viewer_pager")
+                    .graphicsLayer {
+
+                        alpha = progress.value
+
+                        val dismissScale = 1f - dismissProgress * 0.08f
+
+                        val transitionScale = 0.95f + 0.05f * progress.value
+
+                        val finalScale = dismissScale * transitionScale
+
+                        scaleX = finalScale
+                        scaleY = finalScale
+
+                        translationY = dismissOffset.value
+                    }
+            ) { page ->
                 val media = items.getOrNull(page) ?: return@HorizontalPager
                 val active = page == pager.currentPage
                 if (media.type == MediaType.Video && active && !pager.isScrollInProgress)
@@ -121,10 +256,20 @@ fun MediaViewer(items: List<MediaItem>, initialId: String, loader: ImageLoader,
                 exit = exit + slideOutVertically(tween(GalleryMotion.HideControls, easing = GalleryMotion.Easing)) { -it / 8 }, modifier = Modifier.align(Alignment.TopCenter)) {
                 Row(Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.5f))
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = ::close, enabled = !deletionBusy) { Icon(painterResource(R.drawable.ic_close), stringResource(R.string.close), tint = Color.White) }
-                    val date = remember(current.creationDate) { DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(current.creationDate)) }
-                    Text(date, color = Color.White, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                    Text("${pager.currentPage.coerceAtMost(items.lastIndex) + 1} / ${items.size}", color = Color.LightGray, modifier = Modifier.padding(end = 16.dp).testTag("viewer_position"))
+                    IconButton(onClick = ::close, enabled = !deletionBusy) { Icon(painterResource(R.drawable.ic_back), stringResource(R.string.close), tint = Color.White) }
+                    Column(Modifier.weight(1f)) {
+                        Text(current.filename, color = Color.White, style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        Text("${pager.currentPage.coerceAtMost(items.lastIndex) + 1} / ${items.size}", color = Color.LightGray,
+                            style = MaterialTheme.typography.labelSmall, modifier = Modifier.testTag("viewer_position"))
+                    }
+                    var overflow by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(onClick = { overflow = true }) { Icon(painterResource(R.drawable.ic_more), stringResource(R.string.more_options), tint = Color.White) }
+                        DropdownMenu(overflow, { overflow = false }) {
+                            DropdownMenuItem(text = { Text(stringResource(R.string.information)) }, onClick = { overflow = false; showInfo = true })
+                        }
+                    }
                 }
             }
             val snackbar = remember { SnackbarHostState() }
@@ -148,6 +293,12 @@ fun MediaViewer(items: List<MediaItem>, initialId: String, loader: ImageLoader,
                         } catch (_: Exception) { scope.launch { snackbar.showSnackbar(shareError) } }
                     }
                     ViewerAction(R.drawable.ic_info, R.string.information, !deletionBusy && !closing) { showInfo = true }
+                    IconButton(onClick = { toggleFavorite(current) }, enabled = !deletionBusy && !closing) {
+                        val favorite = current.id in favorites
+                        Icon(painterResource(if (favorite) R.drawable.ic_favorite else R.drawable.ic_favorite_outline),
+                            stringResource(if (favorite) R.string.remove_favorite else R.string.add_favorite),
+                            tint = if (favorite) MaterialTheme.colorScheme.primary else Color.White)
+                    }
                     ViewerAction(R.drawable.ic_delete, R.string.delete, !deletionBusy && !closing) { deleteId = current.id }
                 }
             }

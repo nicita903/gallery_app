@@ -47,19 +47,19 @@ private fun BackToTop(grid: LazyGridState, columns: Int, modifier: Modifier) {
             if (it > columns * 8) visible = true else if (it < columns * 3) visible = false
         }
     }
-    AnimatedVisibility(visible, enter = fadeIn(tween(GalleryMotion.Change, easing = GalleryMotion.Easing)) + slideInVertically(tween(GalleryMotion.Change, easing = GalleryMotion.Easing)) { it },
-        exit = fadeOut(tween(GalleryMotion.Change, easing = GalleryMotion.Easing)) + slideOutVertically(tween(GalleryMotion.Change, easing = GalleryMotion.Easing)) { it }, modifier = modifier) {
+    AnimatedVisibility(visible, enter = fadeIn(tween(210, easing = GalleryMotion.Easing)) + slideInVertically(tween(210, easing = GalleryMotion.Easing)) { it },
+        exit = fadeOut(tween(210, easing = GalleryMotion.Easing)) + slideOutVertically(tween(210, easing = GalleryMotion.Easing)) { it }, modifier = modifier) {
         Surface(onClick = {
             jump?.cancel()
             jump = scope.launch {
                 if (grid.firstVisibleItemIndex > columns * 30) grid.scrollToItem(columns * 2)
                 grid.animateScrollToItem(0)
             }
-        }, color = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurface,
-            shape = RoundedCornerShape(24.dp), shadowElevation = 2.dp, modifier = Modifier.testTag("scroll_to_top")) {
-            Row(Modifier.padding(horizontal = 24.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(painterResource(R.drawable.ic_up), null, Modifier.size(20.dp))
-                Text(stringResource(R.string.back_to_top), style = MaterialTheme.typography.labelLarge)
+        }, color = MaterialTheme.colorScheme.primary, contentColor = androidx.compose.ui.graphics.Color.White,
+            shape = androidx.compose.foundation.shape.CircleShape, shadowElevation = 0.dp,
+            modifier = Modifier.size(52.dp).testTag("scroll_to_top")) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(painterResource(R.drawable.ic_up), stringResource(R.string.back_to_top), Modifier.size(24.dp))
             }
         }
     }
@@ -88,7 +88,7 @@ private fun MonthScrollbar(grid: LazyGridState, map: GalleryScrollMap, months: L
     val alpha = scrollbarAlpha(grid, dragging)
     val density = LocalDensity.current
     val thumb = with(density) { 44.dp.toPx() }
-    val color = MaterialTheme.colorScheme.onSurfaceVariant
+    val color = if (dragging) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
     val description = stringResource(R.string.fast_scroll)
     BoxWithConstraints(modifier) {
         val travel = (with(density) { maxHeight.toPx() } - thumb).coerceAtLeast(1f)
@@ -120,8 +120,9 @@ private fun MonthScrollbar(grid: LazyGridState, map: GalleryScrollMap, months: L
         } }
         AnimatedVisibility(dragging, enter = fadeIn(tween(160, easing = GalleryMotion.Easing)), exit = fadeOut(tween(160, easing = GalleryMotion.Easing)), modifier = Modifier.align(Alignment.TopEnd)
             .offset { IntOffset(-with(density) { 32.dp.roundToPx() }, (dragProgress * travel).toInt().coerceAtLeast(0)) }) {
-            Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.inverseSurface) {
-                Text(month, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.inverseOnSurface,
+            Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
+                Text(month, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp).testTag("month_indicator"), maxLines = 1)
             }
         }
@@ -163,7 +164,7 @@ internal fun AlbumScrollControls(grid: LazyGridState, albumCount: Int, modifier:
         }
     } }
     val alpha = scrollbarAlpha(grid, dragging)
-    val color = MaterialTheme.colorScheme.onSurfaceVariant
+    val color = if (dragging) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
     val description = stringResource(R.string.scroll_albums)
     BoxWithConstraints(modifier) {
         val thumb = with(density) { 44.dp.toPx() }

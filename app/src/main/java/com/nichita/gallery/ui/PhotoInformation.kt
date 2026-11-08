@@ -31,7 +31,8 @@ internal fun PhotoInformation(item: MediaItem, repository: MediaMetadata, onClos
                 item(key = field.label) {
                     Column {
                         Text(stringResource(field.label), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(field.value, style = MaterialTheme.typography.bodyLarge)
+                        Text(field.value, style = MaterialTheme.typography.bodyLarge,
+                            fontFamily = if (field.label == R.string.folder) androidx.compose.ui.text.font.FontFamily.Monospace else null)
                     }
                 }
             }
