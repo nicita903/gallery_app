@@ -1,0 +1,23 @@
+<resources>
+    <string name="app_name">Gallery</string>
+    <string name="photos">Photos</string>
+    <string name="albums">Albums</string>
+    <string name="all_albums">All albums</string>
+    <string name="local_library">On this device</string>
+    <string name="limited_library">Media access is limited</string>
+    <string name="manage_access">Manage media access</string>
+    <string name="allow_access">Allow photo and video access</string>
+    <string name="app_settings">App settings</string>
+    <string name="permission_title">Your library, on your device</string>
+    <string name="permission_message">Allow access to display local photos and videos. You can change access at any time in App settings.</string>
+    <string name="load_error">Unable to load media</string>
+    <string name="load_error_message">Storage may be unavailable or access may have changed. Check permissions and try again.</string>
+    <string name="empty_title">No accessible photos or videos</string>
+    <string name="empty_message">New local media will appear here. If access is limited, use Manage media access to select more items.</string>
+    <string name="retry">Try again</string>
+    <string name="refresh">Refresh</string>
+    <string name="video">Video</string>
+    <string name="close">Close viewer</string>
+    <string name="media_unavailable">This image is no longer accessible or its format is unsupported.</string>
+    <string name="video_unavailable">This video is no longer accessible or cannot be played on this device.</string>
+</resources>
