@@ -18,6 +18,9 @@
     <string name="refresh">Refresh</string>
     <string name="video">Video</string>
     <string name="close">Close viewer</string>
+    <string name="scroll_to_top">Scroll to top</string>
+    <string name="fast_scroll">Scroll by month</string>
+    <string name="grid_columns">Photos per row: %1$d</string>
     <string name="media_unavailable">This image is no longer accessible or its format is unsupported.</string>
     <string name="video_unavailable">This video is no longer accessible or cannot be played on this device.</string>
 </resources>

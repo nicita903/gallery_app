@@ -80,8 +80,9 @@ private fun ZoomablePhoto(media: MediaItem, loader: ImageLoader, active: Boolean
     var decodedRatio by remember(media.id) { mutableFloatStateOf(0f) }
     LaunchedEffect(active) { if (!active) { scale = 1f; offset = Offset.Zero; onZoomed(false) } }
     val context = LocalContext.current
-    val request = remember(media.contentUri, active) {
-        ImageRequest.Builder(context).data(media.contentUri).size(if (active) 2560 else 512).build()
+    val request = remember(media.contentUri, media.cacheVersion, active) {
+        ImageRequest.Builder(context).data(media.contentUri).memoryCacheKey("viewer:${media.id}:${media.cacheVersion}:$active")
+            .size(if (active) 2560 else 512).build()
     }
     BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         val density = LocalDensity.current

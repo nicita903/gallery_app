@@ -1,5 +1,27 @@
 # Gallery: local media
 
+## Gallery 1.2 quick checks
+
+Gallery 1.2 is installed on the connected Galaxy S25. Open Gallery and keep your
+existing full/selected media choice. Scroll through uncached photos in both
+directions, including video-heavy and HEIC sections. Verify you can continue
+scrolling and selecting items before thumbnails finish loading.
+
+Pinch inward to increase columns and outward to decrease them (2-8). Release to
+commit the change. The nearby visible photo should remain the scroll anchor.
+Close/reopen Gallery and confirm the selected column count is restored.
+
+Drag the thin right-edge scrollbar and check its month/year label against the
+visible month. Test months with very different item counts at 2, 3, and 8 columns.
+After scrolling down, tap the arrow button above the navigation bar to return to
+the beginning. Also check album covers/counts, image swipe/zoom, local video
+play/pause/seek, and returning to the same grid position from the viewer.
+
+Repeat in light/dark mode and larger system text. Enable airplane mode manually
+and check media access/playback again; this can disconnect wireless ADB. Do not
+infer 120 Hz performance from the debug APK alone. Measurements, limitations,
+complete changed-file list, and regression coverage are in PERFORMANCE.md.
+
 ## Build and install
 
 Open this folder in Android Studio, sync Gradle, select the app configuration,
