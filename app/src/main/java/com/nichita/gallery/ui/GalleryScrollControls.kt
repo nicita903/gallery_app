@@ -33,7 +33,14 @@ import kotlinx.coroutines.launch
 internal fun GalleryScrollControls(grid: LazyGridState, map: GalleryScrollMap, months: List<String>, modifier: Modifier = Modifier) {
     Box(modifier) {
         MonthScrollbar(grid, map, months, Modifier.fillMaxSize().padding(vertical = 8.dp))
-        BackToTop(grid, map.columns, Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp))
+        BackToTop(grid, map.columns,
+            modifier = Modifier
+            .align(Alignment.BottomEnd)
+            .padding(
+                end = 16.dp,
+                bottom = 120.dp
+            )
+            .padding(bottom = 12.dp))
     }
 }
 
