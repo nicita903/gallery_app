@@ -145,10 +145,19 @@ internal fun GalleryContent(
         if (!state.loading && !state.searching && selectedId != null && visibleItems.isEmpty()) selectedId = null
         if (!state.loading && albumId != null && album == null) { selectedId = null; albumId = null }
     }
-    Scaffold(containerColor = MaterialTheme.colorScheme.background, bottomBar = {
-        TerminalNavigation(state.tab, selectTab)
-    }) { insets ->
-        BoxWithConstraints(Modifier.padding(insets).fillMaxSize()) {
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background
+    ) { insets ->
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(insets)
+        ) {
+
+            BoxWithConstraints(
+                modifier = Modifier.fillMaxSize()
+            ) {
             val tab = state.tab
             val header: @Composable () -> Unit = {
                 TerminalHeader(stringResource(if (state.favoritesOnly && tab == GalleryTab.Photos) R.string.favorites else tab.label),
@@ -207,7 +216,12 @@ internal fun GalleryContent(
                             setColumns(value)
                         }
                     },
-                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 24.dp),
+                contentPadding = PaddingValues(
+                    start = 12.dp,
+                    end = 12.dp,
+                    top = 0.dp,
+                    bottom = 110.dp
+                ),
                 horizontalArrangement = Arrangement.spacedBy(gap), verticalArrangement = Arrangement.spacedBy(gap)) {
                 item(key = "heading", span = { GridItemSpan(maxLineSpan) }, contentType = "heading") {
                     Column(Modifier.onSizeChanged {
@@ -307,10 +321,39 @@ internal fun GalleryContent(
                     }
                 }
             }
-            if (mediaGrid && state.access.canRead && !state.error && sections.isNotEmpty()) {
-                GalleryScrollControls(scroll, map, sections.map { it.month }, Modifier.fillMaxSize())
-            } else if (tab == GalleryTab.Albums && openAlbum == null && library.albums.isNotEmpty()) {
-                AlbumScrollControls(albumsScroll, library.albums.size, Modifier.fillMaxSize(), columns, headingPixels, library.albums)
+                if (mediaGrid && state.access.canRead && !state.error && sections.isNotEmpty()) {
+                    GalleryScrollControls(
+                        scroll,
+                        map,
+                        sections.map { it.month },
+                        Modifier.fillMaxSize()
+                    )
+                } else if (
+                    tab == GalleryTab.Albums &&
+                    openAlbum == null &&
+                    library.albums.isNotEmpty()
+                ) {
+                    AlbumScrollControls(
+                        albumsScroll,
+                        library.albums.size,
+                        Modifier.fillMaxSize(),
+                        columns,
+                        headingPixels,
+                        library.albums
+                    )
+                }
+            }
+
+            // Floating navigation above gallery content
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+            ) {
+                TerminalNavigation(
+                    selected = state.tab,
+                    select = selectTab
+                )
             }
         }
     }
