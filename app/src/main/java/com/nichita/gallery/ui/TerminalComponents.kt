@@ -61,12 +61,14 @@ internal val GalleryTab.icon: Int get() = when (this) {
 
 @Composable
 internal fun TerminalHeader(title: String, search: () -> Unit, settings: () -> Unit,
-    refresh: () -> Unit, favoritesOnly: Boolean, toggleFavorites: () -> Unit) {
+    refresh: () -> Unit, favoritesOnly: Boolean, toggleFavorites: () -> Unit,
+    openDrawer: () -> Unit = {}) {
     var menu by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("[ >_ ]", color = MaterialTheme.colorScheme.primary, fontFamily = FontFamily.Monospace,
-                modifier = Modifier.padding(end = 8.dp), style = MaterialTheme.typography.labelMedium)
+                modifier = Modifier.clickable(onClick = openDrawer).padding(end = 8.dp),
+                style = MaterialTheme.typography.labelMedium)
             Text("gallery@local:~$", fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium,
                 modifier = Modifier.weight(1f), maxLines = 1)

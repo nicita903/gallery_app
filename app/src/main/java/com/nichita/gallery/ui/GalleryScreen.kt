@@ -40,6 +40,13 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.material3.DrawerValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import kotlinx.coroutines.launch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -125,6 +132,23 @@ internal fun GalleryContent(
     var albumId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedPosition by rememberSaveable { mutableIntStateOf(0) }
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val drawerScope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
+    var moduleHistory by rememberSaveable { mutableStateOf(emptyList<String>()) }
+
+    fun navigateTo(tab: GalleryTab) {
+        if (tab == state.tab) return
+        moduleHistory = moduleHistory + state.tab.name
+        selectTab(tab)
+    }
+
+    fun navigateBackModule() {
+        val previous = moduleHistory.lastOrNull() ?: return
+        moduleHistory = moduleHistory.dropLast(1)
+        selectTab(GalleryTab.valueOf(previous))
+    }
+
     var pinching by remember { mutableStateOf(false) }
     val preview = remember { mutableFloatStateOf(1f) }
     val library = (if (state.tab == GalleryTab.Photos) state.displayLibrary else state.allLibrary) ?: state.library
@@ -140,14 +164,46 @@ internal fun GalleryContent(
     var photosHeading by rememberSaveable { mutableIntStateOf(0) }
     var albumsHeading by rememberSaveable { mutableIntStateOf(0) }
     var searchHeading by rememberSaveable { mutableIntStateOf(0) }
-    BackHandler(enabled = state.tab == GalleryTab.Albums && albumId != null && selectedId == null) { albumId = null }
+    BackHandler(enabled = selectedId == null && drawerState.isOpen) {
+        drawerScope.launch { drawerState.close() }
+    }
+    BackHandler(enabled = selectedId == null && !drawerState.isOpen && state.tab == GalleryTab.Albums && albumId != null) {
+        albumId = null
+    }
+    BackHandler(enabled = selectedId == null && !drawerState.isOpen && !(state.tab == GalleryTab.Albums && albumId != null) && moduleHistory.isNotEmpty()) {
+        navigateBackModule()
+    }
     LaunchedEffect(pageLibrary, album, state.loading, state.searching) {
         if (!state.loading && !state.searching && selectedId != null && visibleItems.isEmpty()) selectedId = null
         if (!state.loading && albumId != null && album == null) { selectedId = null; albumId = null }
     }
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background
-    ) { insets ->
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val drawerWidth = (maxWidth * 0.84f).coerceAtMost(360.dp)
+        ModalNavigationDrawer(
+            drawerState = drawerState,
+            gesturesEnabled = drawerState.isOpen,
+            drawerContent = {
+                GalleryDrawer(
+                    width = drawerWidth,
+                    selected = state.tab,
+                    onSelect = { tab ->
+                        navigateTo(tab)
+                        drawerScope.launch { drawerState.close() }
+                    }
+                )
+            }
+        ) {
+            GalleryGestures(
+                modifier = Modifier.fillMaxSize(),
+                enabled = selectedId == null && !drawerState.isOpen && !pinching,
+                canGoBack = moduleHistory.isNotEmpty() && albumId == null,
+                onOpenMenu = { drawerScope.launch { drawerState.open() } },
+                onGoBack = { navigateBackModule() },
+                onHaptic = { haptic.performHapticFeedback(HapticFeedbackType.LongPress) }
+            ) {
+                Scaffold(
+                    containerColor = MaterialTheme.colorScheme.background
+                ) { insets ->
 
         Box(
             modifier = Modifier
@@ -161,9 +217,10 @@ internal fun GalleryContent(
             val tab = state.tab
             val header: @Composable () -> Unit = {
                 TerminalHeader(stringResource(if (state.favoritesOnly && tab == GalleryTab.Photos) R.string.favorites else tab.label),
-                    search = { selectTab(GalleryTab.Search) }, settings = { selectTab(GalleryTab.Settings) },
+                    search = { navigateTo(GalleryTab.Search) }, settings = { navigateTo(GalleryTab.Settings) },
                     refresh = refresh, favoritesOnly = state.favoritesOnly,
-                    toggleFavorites = { toggleFavorites(); selectTab(GalleryTab.Photos) })
+                    toggleFavorites = { toggleFavorites(); navigateTo(GalleryTab.Photos) },
+                    openDrawer = { drawerScope.launch { drawerState.open() } })
             }
             if (tab == GalleryTab.Settings) {
                 GallerySettings(state, setTheme, setOldest, setAlbumNames, setColumns, requestAccess, openSettings, settingsScroll, header)
@@ -220,7 +277,7 @@ internal fun GalleryContent(
                     start = 12.dp,
                     end = 12.dp,
                     top = 0.dp,
-                    bottom = 110.dp
+                    bottom = 24.dp
                 ),
                 horizontalArrangement = Arrangement.spacedBy(gap), verticalArrangement = Arrangement.spacedBy(gap)) {
                 item(key = "heading", span = { GridItemSpan(maxLineSpan) }, contentType = "heading") {
@@ -344,18 +401,10 @@ internal fun GalleryContent(
                 }
             }
 
-            // Floating navigation above gallery content
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-            ) {
-                TerminalNavigation(
-                    selected = state.tab,
-                    select = selectTab
-                )
+                }
             }
         }
+    }
     }
     val selectedIndex = remember(visibleItems, selectedId, selectedPosition) {
         if (selectedId == null || visibleItems.isEmpty()) -1
