@@ -12,6 +12,18 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class DeviceThumbnailTest {
+    @Test fun cachedPreviewReusesGridBucketButNeverAnotherRevision() = runBlocking {
+        val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as GalleryApplication
+        val access = MediaPermissions.read(app)
+        assumeTrue(access.canRead)
+        val item = MediaRepository(app).load(access).items.firstOrNull { it.type == MediaType.Image }
+        assumeTrue(item != null)
+        requireNotNull(item)
+        val result = app.thumbnails.execute(thumbnailImageRequest(app, item, 320)) as coil3.request.SuccessResult
+        assertSame(result.image, cachedThumbnail(app.thumbnails, item, 320)?.image)
+        assertNotNull(cachedThumbnail(app.thumbnails, item, 512))
+        assertNull(cachedThumbnail(app.thumbnails, item.copy(cacheVersion = "not-the-same-revision"), 320))
+    }
     @Test fun unchangedFullAccessReusesMetadataSnapshot() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val access = MediaPermissions.read(context)

@@ -35,6 +35,8 @@ import coil3.BitmapImage
 import coil3.ImageLoader
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
+import coil3.size.Precision
+import coil3.size.Scale
 import com.nichita.gallery.R
 import com.nichita.gallery.data.*
 import kotlinx.coroutines.Job
@@ -63,7 +65,7 @@ internal class PhotoTransform {
 
 @Composable
 internal fun ZoomablePhoto(media: MediaItem, loader: ImageLoader, thumbnails: ImageLoader, active: Boolean,
-    transform: PhotoTransform, onZoomed: (Boolean) -> Unit, onTap: () -> Unit) {
+    transform: PhotoTransform, onZoomed: (Boolean) -> Unit, onTap: () -> Unit, previewPixels: Int = 384) {
     var scale by transform.scale
     var offset by transform.offset
     var decodedRatio by remember(media.id, media.cacheVersion) { mutableFloatStateOf(0f) }
@@ -77,12 +79,12 @@ internal fun ZoomablePhoto(media: MediaItem, loader: ImageLoader, thumbnails: Im
     LaunchedEffect(media.id, active) { snapshotFlow { active && scale > 1.01f }.collect { zoomCallback(it) } }
     val context = LocalContext.current.applicationContext
     val full = remember(media.id, media.cacheVersion) {
-        ImageRequest.Builder(context).data(media.contentUri).memoryCacheKey("viewer:${media.id}:${media.cacheVersion}").size(2560).build()
+        ImageRequest.Builder(context).data(media.contentUri).memoryCacheKey("viewer:${media.id}:${media.cacheVersion}")
+            .size(2560).scale(Scale.FIT).precision(Precision.INEXACT).build()
     }
-    val thumb = remember(media.id, media.cacheVersion) { thumbnailImageRequest(context, media, 512) }
-    val cached = remember(media.id, media.cacheVersion) {
-        val prefix = "thumbnail:${media.contentUri}:${media.cacheVersion}:"
-        thumbnails.memoryCache?.let { cache -> cache.keys.firstOrNull { it.key.startsWith(prefix) }?.let { cache[it]?.image as? BitmapImage } }
+    val thumb = remember(media.id, media.cacheVersion, previewPixels) { thumbnailImageRequest(context, media, previewPixels) }
+    val cached = remember(media.id, media.cacheVersion, previewPixels) {
+        cachedThumbnail(thumbnails, media, previewPixels)?.image as? BitmapImage
     }
     val alpha = animateFloatAsState(if (loaded) 1f else 0f, tween(160, easing = GalleryMotion.Easing), label = "Image ready")
     BoxWithConstraints(Modifier.fillMaxSize().clipToBounds(), contentAlignment = Alignment.Center) {

@@ -9,6 +9,7 @@ import java.util.Locale
 internal fun presentLibrary(source: MediaLibrary, oldest: Boolean, albumNames: Boolean,
     favoritesOnly: Boolean, favorites: Set<String>): MediaLibrary {
     val base = if (favoritesOnly) buildLibrary(source.items.filter { it.id in favorites }) else source
+    if (!oldest && !albumNames) return base
     fun sections(entries: List<MediaSection>) = if (oldest)
         entries.asReversed().map { it.copy(items = it.items.asReversed()) } else entries
     val albums = base.albums.map { album -> if (oldest) album.copy(

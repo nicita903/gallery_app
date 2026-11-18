@@ -28,7 +28,6 @@ internal fun MediaThumbnail(media: MediaItem, loader: ImageLoader, pixels: Int, 
     val request = remember(media.contentUri, media.cacheVersion, size) {
         thumbnailImageRequest(context, media, size)
     }
-    val duration = remember(media.durationMillis) { formatDuration(media.durationMillis ?: 0L) }
     Box(modifier.fillMaxWidth().aspectRatio(1f).background(MaterialTheme.colorScheme.surfaceVariant)) {
         AsyncImage(model = request, imageLoader = loader, contentDescription = media.filename,
             error = painterResource(R.drawable.ic_photos), contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
@@ -36,7 +35,10 @@ internal fun MediaThumbnail(media: MediaItem, loader: ImageLoader, pixels: Int, 
             Row(Modifier.align(Alignment.BottomEnd).padding(3.dp).clip(RoundedCornerShape(4.dp))
                 .background(Color.Black.copy(alpha = 0.65f)).padding(3.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(painterResource(R.drawable.ic_play), stringResource(R.string.video), tint = Color.White, modifier = Modifier.size(12.dp))
-                if (columns <= 5) Text(duration, color = Color.White, style = MaterialTheme.typography.labelSmall)
+                if (columns <= 5) {
+                    val duration = remember(media.durationMillis) { formatDuration(media.durationMillis ?: 0L) }
+                    Text(duration, color = Color.White, style = MaterialTheme.typography.labelSmall)
+                }
             }
         }
     }

@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.SavedStateHandle
 import com.nichita.gallery.data.*
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
@@ -84,6 +85,7 @@ class GalleryViewModel(application: Application, private val savedState: SavedSt
     private var loadGeneration = 0L
     private var columnsChanged = false
     private var preferencesChanged = false
+    private val preferencesReady = CompletableDeferred<Unit>()
     private val columnWrites = Channel<Int>(Channel.CONFLATED)
     private val preferenceWrites = Channel<GalleryUiState>(Channel.CONFLATED)
 
@@ -99,25 +101,32 @@ class GalleryViewModel(application: Application, private val savedState: SavedSt
             }
         }
         viewModelScope.launch {
-            val settings = withContext(Dispatchers.IO) {
-                val prefs = application.getSharedPreferences("gallery_settings", 0)
-                GalleryUiState(theme = ThemeMode.entries.find { it.name == prefs.getString("theme", null) } ?: ThemeMode.Dark,
-                    oldestFirst = prefs.getBoolean("oldest", false), albumNames = prefs.getBoolean("album_names", false),
-                    favorites = prefs.getStringSet("favorites", emptySet())!!.toSet())
+            try {
+                val settings = withContext(Dispatchers.IO) {
+                    val prefs = application.getSharedPreferences("gallery_settings", 0)
+                    GalleryUiState(theme = ThemeMode.entries.find { it.name == prefs.getString("theme", null) } ?: ThemeMode.Dark,
+                        columns = prefs.getInt("grid_columns", 3).coerceIn(2, 8),
+                        oldestFirst = prefs.getBoolean("oldest", false), albumNames = prefs.getBoolean("album_names", false),
+                        favorites = prefs.getStringSet("favorites", emptySet())!!.toSet())
+                }
+                mutableState.update { current -> current.copy(
+                    columns = if (columnsChanged) current.columns else settings.columns,
+                    theme = if (preferencesChanged) current.theme else settings.theme,
+                    oldestFirst = if (preferencesChanged) current.oldestFirst else settings.oldestFirst,
+                    albumNames = if (preferencesChanged) current.albumNames else settings.albumNames,
+                    favorites = if (preferencesChanged) current.favorites else settings.favorites) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // A damaged preferences file must not prevent local media from opening.
+            } finally {
+                preferencesReady.complete(Unit)
             }
-            if (!preferencesChanged) mutableState.update { it.copy(theme = settings.theme, oldestFirst = settings.oldestFirst,
-                albumNames = settings.albumNames, favorites = settings.favorites) }
         }
         viewModelScope.launch {
             for (columns in columnWrites) withContext(Dispatchers.IO) {
                 application.getSharedPreferences("gallery_settings", 0).edit { putInt("grid_columns", columns) }
             }
-        }
-        viewModelScope.launch {
-            val columns = withContext(Dispatchers.IO) {
-                application.getSharedPreferences("gallery_settings", 0).getInt("grid_columns", 3).coerceIn(2, 8)
-            }
-            if (!columnsChanged) mutableState.update { it.copy(columns = columns) }
         }
     }
 
@@ -192,6 +201,9 @@ class GalleryViewModel(application: Application, private val savedState: SavedSt
         loading = viewModelScope.launch {
             try {
                 val loaded = repository.load(access, force)
+                // Discovery runs concurrently with preferences, but tiles use the final bucket
+                // from their first request instead of loading once at the default density.
+                preferencesReady.await()
                 val library = withContext(Dispatchers.Default) {
                     val removed = deletedIds.value
                     if (removed.isEmpty()) loaded else buildLibrary(loaded.items.filterNot { it.id in removed })
@@ -200,8 +212,10 @@ class GalleryViewModel(application: Application, private val savedState: SavedSt
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                mutableState.update { it.copy(library = MediaLibrary(), loading = false, error = true,
-                    access = MediaPermissions.read(getApplication())) }
+                val currentAccess = MediaPermissions.read(getApplication())
+                mutableState.update { it.copy(
+                    library = if (currentAccess == it.access) it.library else MediaLibrary(),
+                    loading = false, error = true, access = currentAccess) }
             } finally {
                 if (generation == loadGeneration && pendingRefresh) {
                     val forceAgain = pendingForce

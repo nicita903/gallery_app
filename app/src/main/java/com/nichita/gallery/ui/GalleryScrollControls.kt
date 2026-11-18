@@ -148,9 +148,17 @@ internal fun AlbumScrollControls(grid: LazyGridState, albumCount: Int, modifier:
     LaunchedEffect(geometry, grid) {
         snapshotFlow { grid.layoutInfo }.collect { layout ->
             var changed = false
-            layout.visibleItemsInfo.groupBy { it.row }.forEach { (row, items) ->
-                if (geometry.measure(row, items.maxOf { it.size.height }.toFloat())) changed = true
+            var row = -1
+            var height = 0
+            for (item in layout.visibleItemsInfo) {
+                if (item.row != row) {
+                    if (geometry.measure(row, height.toFloat())) changed = true
+                    row = item.row
+                    height = 0
+                }
+                height = maxOf(height, item.size.height)
             }
+            if (geometry.measure(row, height.toFloat())) changed = true
             if (changed) { geometry.rebuild(); version++ }
         }
     }

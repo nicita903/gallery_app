@@ -132,6 +132,7 @@ internal fun GalleryContent(
     var albumId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedPosition by rememberSaveable { mutableIntStateOf(0) }
+    var selectedPreviewPixels by rememberSaveable { mutableIntStateOf(384) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val drawerScope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
@@ -352,6 +353,7 @@ internal fun GalleryContent(
                                 MediaThumbnail(media, thumbnails, cellPixels, columns,
                                     Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = !pinching) {
                                         selectedPosition = visibleItems.indexOfFirst { it.id == media.id }.coerceAtLeast(0)
+                                        selectedPreviewPixels = cellPixels
                                         selectedId = media.id
                                     })
                             }
@@ -414,7 +416,7 @@ internal fun GalleryContent(
         selectedId = it
         selectedPosition = visibleItems.indexOfFirst { item -> item.id == it }.coerceAtLeast(0)
     }, onClose = { selectedId = null }, onDelete = onDelete, thumbnails = thumbnails, deletionBusy = deletionBusy,
-        favorites = state.favorites, toggleFavorite = toggleFavorite)
+        favorites = state.favorites, toggleFavorite = toggleFavorite, previewPixels = selectedPreviewPixels)
 }
 
 @Composable

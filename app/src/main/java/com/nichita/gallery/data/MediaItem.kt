@@ -36,15 +36,23 @@ internal fun creationDate(takenMillis: Long, addedSeconds: Long, modifiedSeconds
     takenMillis.takeIf { it > 0 } ?: (addedSeconds.takeIf { it > 0 } ?: modifiedSeconds.coerceAtLeast(0)) * 1000
 
 internal fun buildLibrary(items: List<MediaItem>): MediaLibrary {
-    val formatter = DateTimeFormatter.ofPattern("LLLL yyyy", Locale.getDefault()).withZone(ZoneId.systemDefault())
+    val zone = ZoneId.systemDefault()
+    val formatter = DateTimeFormatter.ofPattern("LLLL yyyy", Locale.getDefault()).withZone(zone)
     val monthNames = HashMap<java.time.YearMonth, String>()
-    fun sections(media: List<MediaItem>) = media.groupBy {
-        val date = Instant.ofEpochMilli(it.creationDate).atZone(ZoneId.systemDefault())
-        monthNames.getOrPut(java.time.YearMonth.from(date)) { formatter.format(date) }
-    }
-        .map { (month, entries) -> MediaSection(month, entries) }
+    val months = LinkedHashMap<String, MutableList<MediaItem>>()
+    val albumItems = LinkedHashMap<String, MutableList<MediaItem>>()
+    val albumMonths = HashMap<String, LinkedHashMap<String, MutableList<MediaItem>>>()
     val sorted = items.sortedWith(compareByDescending<MediaItem> { it.creationDate }.thenBy { it.id })
-    return MediaLibrary(sorted, sections(sorted), sorted.groupBy { it.albumId }.map { (id, entries) ->
-        MediaAlbum(id, entries.first().albumName, entries, sections(entries))
+    for (item in sorted) {
+        // Resolve each timestamp once, sharing the month label between Photos and Albums.
+        val date = Instant.ofEpochMilli(item.creationDate).atZone(zone)
+        val month = monthNames.getOrPut(java.time.YearMonth.from(date)) { formatter.format(date) }
+        months.getOrPut(month) { ArrayList() }.add(item)
+        albumItems.getOrPut(item.albumId) { ArrayList() }.add(item)
+        albumMonths.getOrPut(item.albumId) { LinkedHashMap() }.getOrPut(month) { ArrayList() }.add(item)
+    }
+    fun sections(groups: Map<String, List<MediaItem>>) = groups.map { (month, entries) -> MediaSection(month, entries) }
+    return MediaLibrary(sorted, sections(months), albumItems.map { (id, entries) ->
+        MediaAlbum(id, entries.first().albumName, entries, sections(albumMonths.getValue(id)))
     })
 }

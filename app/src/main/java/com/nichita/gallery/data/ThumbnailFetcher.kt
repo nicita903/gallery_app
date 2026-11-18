@@ -14,6 +14,7 @@ import coil3.fetch.ImageFetchResult
 import coil3.request.Options
 import coil3.request.ImageRequest
 import coil3.size.Precision
+import coil3.memory.MemoryCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Semaphore
@@ -31,6 +32,17 @@ internal fun thumbnailImageRequest(context: Context, media: MediaItem, pixels: I
     val data = ThumbnailRequest(media.contentUri, media.cacheVersion, thumbnailPixels(pixels))
     return ImageRequest.Builder(context.applicationContext).data(data).memoryCacheKey(data.cacheKey)
         .size(data.pixels).precision(Precision.INEXACT).build()
+}
+
+internal fun cachedThumbnail(loader: ImageLoader, media: MediaItem, pixels: Int): MemoryCache.Value? {
+    val cache = loader.memoryCache ?: return null
+    val size = thumbnailPixels(pixels)
+    fun value(bucket: Int) = cache[MemoryCache.Key(ThumbnailRequest(media.contentUri, media.cacheVersion, bucket).cacheKey)]
+    value(size)?.let { return it }
+    // At most 16 direct lookups; never copy/scan all cache keys on a viewer tap.
+    for (bucket in size - 64 downTo 64 step 64) value(bucket)?.let { return it }
+    for (bucket in size + 64..1024 step 64) value(bucket)?.let { return it }
+    return null
 }
 
 class ThumbnailFetcher private constructor(
